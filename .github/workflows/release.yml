@@ -42,7 +42,7 @@ jobs:
           [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
           mkdir -p dist
           go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o dist/t3-update-preview ./cmd/t3-update-preview
-          tar -czf "dist/t3-update-preview-$VERSION-$GOOS-$GOARCH.tar.gz" -C dist t3-update-preview -C .. LICENSE README.md
+          tar -czf "dist/t3-update-preview-$VERSION-$GOOS-$GOARCH.tar.gz" -C dist t3-update-preview -C .. LICENSE README.md docs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-${{ matrix.goos }}-${{ matrix.goarch }}
