@@ -1,0 +1,6 @@
+/dist/
+/.superpowers/
+__pycache__/
+*.pyc
+coverage.out
+/devices.json
