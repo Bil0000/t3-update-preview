@@ -47,6 +47,9 @@ class WorkerTests(unittest.TestCase):
         self.process = patch.object(worker.subprocess, "run", side_effect=AssertionError("Unmocked subprocess is forbidden"))
         self.process.start()
         self.addCleanup(self.process.stop)
+        self.which = patch.object(worker.shutil, "which", return_value=None)
+        self.which.start()
+        self.addCleanup(self.which.stop)
         for name, value in (("system_identity", "fixture-system-identity"), ("descriptor", {"environmentId": "fixture-environment", "serverVersion": OLD})):
             stub = patch.object(worker.Worker, name, return_value=value)
             stub.start()
@@ -137,6 +140,22 @@ class WorkerTests(unittest.TestCase):
         self.cli.write_text("#!/bin/sh\n")
         self.assertIn("Script/npm", self.instance().probe()["blocker"])
         self.commands.assert_not_called()
+
+    def test_package_manager_ownership_blocks_cli(self):
+        for manager, flag in (("dpkg-query", "-S"), ("rpm", "-qf")):
+            for managed in (False, True):
+                with self.subTest(manager=manager, managed=managed):
+                    def fake_run(args, **kwargs):
+                        if args[:2] == [manager, flag]:
+                            return subprocess.CompletedProcess(args, 0 if managed else 1, "", "")
+                        return self.fake_run(args, **kwargs)
+                    with patch.object(worker.shutil, "which", side_effect=lambda name: "/fixture/" + manager if name == manager else None), patch.object(worker, "run", side_effect=fake_run) as calls:
+                        info = self.instance().probe()
+                        self.assertEqual(info["supported"], not managed, info)
+                        calls.assert_any_call([manager, flag, self.cli.resolve()], check=False)
+                        if managed:
+                            self.assertIn("Package-managed", info["blocker"])
+                            self.assertFalse(any(call.args[0][-1:] == ["--version"] for call in calls.call_args_list))
 
     def test_wrong_service_base_blocks(self):
         self.service().write_text("ExecStart=/other/runtime/t3 __service-launcher")

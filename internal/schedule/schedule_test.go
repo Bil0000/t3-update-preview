@@ -14,10 +14,19 @@ import (
 	"testing"
 )
 
+func privateHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	if err := os.Chmod(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	return home
+}
+
 func TestScheduleInstallRemove(t *testing.T) {
 	for _, platform := range []string{"darwin", "linux"} {
 		t.Run(platform, func(t *testing.T) {
-			home := t.TempDir()
+			home := privateHome(t)
 			exe := filepath.Join(home, "my bin", "updater")
 			state := filepath.Join(home, "my state")
 			var calls []string
@@ -63,7 +72,7 @@ func TestScheduleInstallRemove(t *testing.T) {
 }
 
 func TestScheduleEscaping(t *testing.T) {
-	home := t.TempDir()
+	home := privateHome(t)
 	exe := filepath.Join(home, "app space $HOME %u &\" <tag>")
 	state := filepath.Join(home, "state $USER %h")
 	for _, platform := range []string{"darwin", "linux"} {
@@ -136,15 +145,23 @@ func TestNotificationInputIsArgument(t *testing.T) {
 }
 
 func TestRefuseUnownedFilesAndSymlinks(t *testing.T) {
-	for _, kind := range []string{"unrelated", "file symlink", "directory symlink"} {
+	for _, kind := range []string{"unrelated", "file symlink", "directory symlink", "writable home", "writable directory"} {
 		t.Run(kind, func(t *testing.T) {
-			home := t.TempDir()
+			home := privateHome(t)
 			dir := filepath.Join(home, ".config", "systemd", "user")
 			path := filepath.Join(dir, unit+".service")
 			if err := os.MkdirAll(dir, 0700); err != nil {
 				t.Fatal(err)
 			}
 			switch kind {
+			case "writable home", "writable directory":
+				target := home
+				if kind == "writable directory" {
+					target = dir
+				}
+				if err := os.Chmod(target, 0777); err != nil {
+					t.Fatal(err)
+				}
 			case "unrelated":
 				if err := os.WriteFile(path, []byte("other app"), 0600); err != nil {
 					t.Fatal(err)
@@ -173,7 +190,7 @@ func TestRefuseUnownedFilesAndSymlinks(t *testing.T) {
 }
 
 func TestMissingSchedulerReturnsError(t *testing.T) {
-	home := t.TempDir()
+	home := privateHome(t)
 	err := install(context.Background(), "linux", home, "/bin/updater", filepath.Join(home, "state"), filepath.Join(home, "config.json"), func(context.Context, string, ...string) error { return errors.New("systemd unavailable") })
 	if err == nil || !strings.Contains(err.Error(), "not enabled") {
 		t.Fatal(err)
@@ -185,7 +202,7 @@ func TestScheduleCapturesOnlySafeSetupPATH(t *testing.T) {
 	t.Setenv("PATH", searchPath)
 	t.Setenv("T3_TEST_PRIVATE_VALUE", "must-not-be-written")
 	for _, platform := range []string{"darwin", "linux"} {
-		home := t.TempDir()
+		home := privateHome(t)
 		run := func(context.Context, string, ...string) error { return nil }
 		if err := install(context.Background(), platform, home, "/bin/updater", filepath.Join(home, "state"), filepath.Join(home, "config.json"), run); err != nil {
 			t.Fatal(err)
@@ -222,7 +239,7 @@ func TestScheduleCapturesOnlySafeSetupPATH(t *testing.T) {
 func TestInstallRejectsUnsafePATHBeforeWriting(t *testing.T) {
 	for _, value := range []string{"", ".:/usr/bin", "/usr/bin:", "/usr/bin::/bin", "bin:/usr/bin", "/usr/bin\nInjected=yes"} {
 		t.Setenv("PATH", value)
-		home := t.TempDir()
+		home := privateHome(t)
 		if err := install(context.Background(), "linux", home, "/bin/updater", filepath.Join(home, "state"), filepath.Join(home, "config.json"), func(context.Context, string, ...string) error { t.Fatal("runner called"); return nil }); err == nil {
 			t.Fatalf("accepted unsafe PATH %q", value)
 		}
