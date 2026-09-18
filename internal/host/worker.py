@@ -649,7 +649,7 @@ class Worker:
         if not app:
             return False
         if self.os == "darwin":
-            script = 'on run argv\nset targetPath to item 1 of argv\ntell application "System Events"\nrepeat with p in application processes\ntry\nif POSIX path of (application file of p as alias) is targetPath & "/" then return "true"\nend try\nend repeat\nend tell\nreturn "false"\nend run'
+            script = 'on run argv\nset targetPath to item 1 of argv\ntell application "System Events"\nrepeat with p in application processes\ntry\nset appPath to POSIX path of (application file of p as alias)\nif appPath is targetPath or appPath is targetPath & "/" then return "true"\nend try\nend repeat\nend tell\nreturn "false"\nend run'
             result = run(["osascript", "-e", script, str(app)])
             if result.stdout.strip() not in ("true", "false"):
                 raise Blocked("Cannot determine the selected desktop app's running state")

@@ -889,6 +889,21 @@ class WorkerTests(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == "darwin", "Requires macOS codesign")
 class NativeSignatureTests(unittest.TestCase):
+    def test_running_app_path_accepts_both_macos_directory_forms(self):
+        obj = worker.Worker.__new__(worker.Worker)
+        obj.os = "darwin"
+        app = Path("/Applications/Selected.app")
+        with patch.object(worker, "run", return_value=subprocess.CompletedProcess([], 0, "false", "")) as command:
+            obj.desktop_running(app)
+        script = command.call_args.args[0][2]
+        script = script.replace('tell application "System Events"', 'tell current application')
+        script = script.replace('application processes', '{item 2 of argv}')
+        script = script.replace('POSIX path of (application file of p as alias)', '(contents of p)')
+        for reported, expected in ((str(app), "true"), (str(app) + "/", "true"), (str(app) + " Copy", "false")):
+            with self.subTest(reported=reported):
+                result = worker.run(["osascript", "-e", script, str(app), reported])
+                self.assertEqual(result.stdout.strip(), expected)
+
     def test_finder_icon_allowed_but_unsigned_team_and_modified_resources_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             app = Path(directory) / "Fixture.app"
