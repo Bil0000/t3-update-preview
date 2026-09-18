@@ -237,6 +237,40 @@ class WorkerTests(unittest.TestCase):
             worker.download(asset, self.home / "download", NEW)
         self.assertFalse((self.home / "download").exists())
 
+    def test_https_uses_mac_certificates_only_when_defaults_are_missing(self):
+        for system, cafile, capath, environment, fallback in (
+            ("Darwin", None, None, {}, True),
+            ("Linux", None, None, {}, False),
+            ("Darwin", "/custom/ca.pem", None, {}, False),
+            ("Darwin", None, "/custom/certs", {}, False),
+            ("Darwin", None, None, {"SSL_CERT_FILE": "/custom/ca.pem"}, False),
+            ("Darwin", None, None, {"SSL_CERT_DIR": "/custom/certs"}, False),
+            ("Darwin", None, None, {"SSL_CERT_FILE": ""}, False),
+        ):
+            with self.subTest(system=system, cafile=cafile, capath=capath, environment=environment):
+                context = unittest.mock.Mock()
+                paths = unittest.mock.Mock(cafile=cafile, capath=capath)
+                opener = unittest.mock.Mock()
+                with patch.object(worker.platform, "system", return_value=system), patch.dict(os.environ, environment, clear=True), patch.object(worker.ssl, "get_default_verify_paths", return_value=paths), patch.object(worker.ssl, "create_default_context", return_value=context) as create, patch.object(worker.urllib.request, "build_opener", return_value=opener) as build:
+                    self.assertIs(worker.open_url("https://github.com", worker.ReleaseRedirect, 60), opener.open.return_value)
+                create.assert_called_once_with()
+                self.assertIs(build.call_args.args[0], worker.ReleaseRedirect)
+                self.assertIs(build.call_args.args[1]._context, context)
+                opener.open.assert_called_once_with("https://github.com", timeout=60)
+                if fallback:
+                    context.load_verify_locations.assert_called_once_with("/etc/ssl/cert.pem")
+                else:
+                    context.load_verify_locations.assert_not_called()
+
+    def test_https_certificate_failure_remains_blocked_with_safe_message(self):
+        asset = {"name": "test.tar.gz", "url": "https://github.com/pingdotgg/t3code/releases/download/v" + NEW + "/test.tar.gz", "digest": "sha256:" + "0" * 64, "size": 4}
+        reason = worker.ssl.SSLCertVerificationError("private certificate details")
+        opener = unittest.mock.Mock()
+        opener.open.side_effect = worker.urllib.error.URLError(reason)
+        with patch.object(worker.urllib.request, "build_opener", return_value=opener), self.assertRaisesRegex(worker.Blocked, "TLS certificate verification failed") as error:
+            worker.download(asset, self.home / "download", NEW)
+        self.assertNotIn("private", str(error.exception))
+
     def test_owned_symlink_and_unmarked_directory_block(self):
         link = self.home / "link"
         link.symlink_to(self.base, target_is_directory=True)

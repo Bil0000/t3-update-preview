@@ -11,12 +11,14 @@ import shlex
 import shutil
 import signal
 import sqlite3
+import ssl
 import struct
 import subprocess
 import sys
 import tarfile
 import tempfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -41,6 +43,20 @@ class ReleaseRedirect(urllib.request.HTTPRedirectHandler):
         if target.scheme != "https" or target.hostname not in ("github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com") or target.username or target.password or target.port not in (None, 443):
             raise Blocked("Untrusted release redirect")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def open_url(url, redirect, timeout):
+    context = ssl.create_default_context()
+    if platform.system() == "Darwin" and "SSL_CERT_FILE" not in os.environ and "SSL_CERT_DIR" not in os.environ:
+        paths = ssl.get_default_verify_paths()
+        if not paths.cafile and not paths.capath:
+            context.load_verify_locations("/etc/ssl/cert.pem")
+    try:
+        return urllib.request.build_opener(redirect, urllib.request.HTTPSHandler(context=context)).open(url, timeout=timeout)
+    except urllib.error.URLError as error:
+        if isinstance(error.reason, ssl.SSLCertVerificationError):
+            raise Blocked("TLS certificate verification failed; check this host's trusted CA certificates") from None
+        raise
 
 
 def parse_version(text):
@@ -222,7 +238,7 @@ def download(asset, destination, target):
     size = asset.get("size")
     if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
         raise Blocked("Asset requires a positive verified size")
-    with urllib.request.build_opener(ReleaseRedirect).open(asset_url, timeout=60) as response, destination.open("xb") as stream:
+    with open_url(asset_url, ReleaseRedirect, 60) as response, destination.open("xb") as stream:
         final = urllib.parse.urlparse(response.url)
         if final.scheme != "https" or final.hostname not in ("github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"):
             raise Blocked("Untrusted asset redirect")
@@ -464,7 +480,7 @@ class Worker:
     def descriptor(self, origin):
         parsed = urllib.parse.urlparse(origin)
         url = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, "/.well-known/t3/environment", "", "", ""))
-        with urllib.request.build_opener(NoRedirect).open(url, timeout=3) as response:
+        with open_url(url, NoRedirect, 3) as response:
             if response.status != 200:
                 raise Blocked("T3 environment descriptor returned an error")
             return json.loads(response.read(64 * 1024))
