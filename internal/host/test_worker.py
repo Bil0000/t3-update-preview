@@ -331,6 +331,16 @@ class WorkerTests(unittest.TestCase):
             self.instance(action="cleanup").execute()
         self.assertTrue((obj.operation_dir() / "stage").exists())
 
+    def test_cleanup_after_prepare_fails_before_operation_exists(self):
+        obj = self.instance(action="prepare", assets=[])
+        with self.assertRaisesRegex(worker.Blocked, "matching standalone"):
+            obj.execute()
+        self.assertFalse(obj.operation_dir().exists())
+        for _ in range(2):
+            self.assertEqual(self.instance(action="cleanup").execute(), {"status": "cleaned"})
+        self.assertFalse(obj.operation_dir().exists())
+        self.assertEqual(self.cli.read_bytes(), b"\x7fELFold")
+
     def test_cleanup_never_deletes_unmarked_directory(self):
         obj = self.instance()
         obj.state_dir()

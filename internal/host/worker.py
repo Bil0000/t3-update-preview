@@ -1257,6 +1257,8 @@ class Worker:
                 return self.rollback()
             if self.operation:
                 directory = self.operation_dir()
+                if not directory.exists():
+                    return {"status": "cleaned"}
                 journal = read_json(directory / "journal.json", {})
                 if journal.get("mounts"):
                     self.journal = journal
