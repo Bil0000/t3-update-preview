@@ -557,7 +557,7 @@ class Worker:
         return directory
 
     def signature(self, app):
-        run(["codesign", "--verify", "--deep", "--strict", app])
+        run(["codesign", "--verify", "--deep", "--strict=symlinks", app])
         details = run(["codesign", "-dv", "--verbose=4", app])
         team = re.search(r"^TeamIdentifier=([A-Z0-9]+)$", details.stderr, re.M)
         if not team:

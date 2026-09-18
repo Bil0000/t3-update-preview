@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -840,6 +841,29 @@ class WorkerTests(unittest.TestCase):
         self.assertIn("external CLI launcher", info["blocker"])
         self.assertFalse((old / "t3").is_symlink())
         self.assertEqual((old / "t3").read_bytes(), b"\x7fELFold")
+
+
+@unittest.skipUnless(sys.platform == "darwin", "Requires macOS codesign")
+class NativeSignatureTests(unittest.TestCase):
+    def test_finder_icon_allowed_but_unsigned_team_and_modified_resources_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = Path(directory) / "Fixture.app"
+            (app / "Contents/MacOS").mkdir(parents=True)
+            (app / "Contents/Resources").mkdir()
+            shutil.copy("/usr/bin/true", app / "Contents/MacOS/fixture")
+            (app / "Contents/Info.plist").write_bytes(worker.plistlib.dumps({"CFBundleExecutable": "fixture", "CFBundleIdentifier": "test.updater.fixture", "CFBundlePackageType": "APPL"}))
+            resource = app / "Contents/Resources/sealed.txt"
+            resource.write_text("original")
+            worker.run(["codesign", "--force", "--sign", "-", app])
+            finder = "0000000000000000040000000000000000000000000000000000000000000000"
+            worker.run(["xattr", "-wx", "com.apple.FinderInfo", finder, app])
+            obj = worker.Worker.__new__(worker.Worker)
+            with self.assertRaisesRegex(worker.Blocked, "no verified signing team"):
+                obj.signature(app)
+            self.assertEqual("".join(worker.run(["xattr", "-px", "com.apple.FinderInfo", app]).stdout.split()).lower(), finder)
+            resource.write_text("tampered")
+            with self.assertRaisesRegex(worker.Blocked, "Command failed: codesign"):
+                obj.signature(app)
 
 
 if __name__ == "__main__":

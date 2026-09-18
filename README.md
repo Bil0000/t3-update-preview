@@ -43,7 +43,7 @@ These routes have isolated fixture tests. Live app replacement, OS sleep/wake, a
 
 Linux discovery checks `~/Applications` and `~/.local/bin` for T3 Code AppImages. Use `app_path` for a different location or to select between multiple copies.
 
-Desktop updates preserve the selected path. AppImages also retain their file mode. macOS app replacement keeps supported Finder custom-icon metadata. An unsupported CPU, missing asset, unknown installation, or missing permission stops the affected update.
+Desktop updates preserve the selected path. AppImages also retain their file mode. macOS app replacement keeps supported Finder custom-icon metadata. Signature verification allows this metadata while checking signed code, sealed resources, and strict symbolic links. An unsupported CPU, missing asset, unknown installation, or missing permission stops the affected update.
 
 ## First setup
 
